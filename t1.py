@@ -20,7 +20,7 @@ for key in session_keys:
 class Teachers:
     def __init__(self):
         """Initialize database connections."""
-        self.client = pymongo.MongoClient("mongodb://localhost:27017/")
+        self.client = pymongo.MongoClient(st.secrets["database"]["clientlink"])
         self.scheduledDB = self.client["ScheduledExams"]
         self.studentsDB = self.client["StudentsDB"]
         self.studentsCollection = self.studentsDB['StudentsCollection']
