@@ -1,0 +1,13 @@
+streamlit
+streamlit-option-menu
+streamlit-extras
+pymongo
+pandas
+numpy
+Pillow
+deepface
+pyzbar
+opencv-python
+tensorflow==2.19.0
+tf-keras
+qrcode
