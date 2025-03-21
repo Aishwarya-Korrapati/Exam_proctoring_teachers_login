@@ -77,52 +77,80 @@ class Teachers:
             else:
                 st.warning("⚠️ No invigilation data found.")
 
-    def validate_face(self, col1, col2, select_hall_ticket_number,collection,subject):
+    def validate_face(self, col1, col2, select_hall_ticket_number, collection, subject):
         col2.subheader("You Are Performing Face Validation", divider='blue')
         captured_image = col2.camera_input("Take a photo for validation")
         
         if captured_image:
             col2.image(captured_image, caption="Captured Image", use_container_width=True)
+            
             if col2.checkbox("Verify"):
-                student_data = self.studentsCollection.find_one({"roll_number": select_hall_ticket_number}, {"front_photo": 1, "_id": 0})
+                # Retrieve stored student photo
+                student_data = self.studentsCollection.find_one(
+                    {"roll_number": select_hall_ticket_number}, 
+                    {"front_photo": 1, "_id": 0}
+                )
                 
-                if student_data and "front_photo" in student_data:
-                    stored_image_data = student_data['front_photo']
-                    stored_image = Image.open(BytesIO(stored_image_data)).convert('RGB')
-                    col2.image(stored_image, caption="Student's Stored Image", use_container_width=True)
-                    
-                    taken_image = Image.open(captured_image).convert('RGB')
-                    taken_image = np.array(taken_image)
-                    stored_image = np.array(stored_image)
-                    
-                    models = ["VGG-Face", "Facenet", "OpenFace", "DeepID", "SFace"]
-                    results = []
-                    
-                    for model in models:
-                        try:
-                            result = DeepFace.verify(taken_image, stored_image, model_name=model)
-                            results.append((model, result['verified']))
-                        except Exception as e:
-                            results.append((model, str(e)))
-                    
-                    df_results = pd.DataFrame(results, columns=["Model", "Result"])
-                    col2.dataframe(df_results)
-                    
-                    true_count = df_results['Result'].sum()
-                    false_count = len(df_results) - true_count
-                    validation_collection = collection.replace("-Schedule", "-Validations")
-                    validation_collection=self.validationDB[validation_collection]
-                    if true_count > false_count:
-                        validation_collection.update_one({"hall_ticket_number": select_hall_ticket_number, "subject": subject},
-                        {"$set":{"studentFaceRecognitionStatus":True}})
-                        col2.success("✅ Student is Present")
-                    else:
-                        validation_collection.update_one({"hall_ticket_number": select_hall_ticket_number, "subject": subject},
-                        {"$set":{"studentFaceRecognitionStatus":False}})
-                        col2.error("❌ Student Verification Failed")
-                else:
+                if not student_data or "front_photo" not in student_data:
                     col2.error("No stored photo found for this student.")
-
+                    return
+                
+                stored_image_data = student_data['front_photo']
+                
+                try:
+                    # Convert stored image from bytes to OpenCV format
+                    stored_image = np.array(Image.open(BytesIO(stored_image_data)).convert('RGB'))
+                    stored_image = cv2.cvtColor(stored_image, cv2.COLOR_RGB2BGR)
+    
+                    # Convert captured image from PIL to OpenCV format
+                    taken_image = np.array(Image.open(captured_image).convert('RGB'))
+                    taken_image = cv2.cvtColor(taken_image, cv2.COLOR_RGB2BGR)
+                except Exception as e:
+                    col2.error(f"❌ Error loading images: {str(e)}")
+                    return
+                
+                # Display stored image
+                col2.image(stored_image, caption="Student's Stored Image", use_container_width=True)
+                
+                models = ["VGG-Face", "Facenet", "OpenFace", "DeepID", "SFace"]
+                results = []
+                
+                for model in models:
+                    try:
+                        result = DeepFace.verify(
+                            img1_path=taken_image, 
+                            img2_path=stored_image, 
+                            model_name=model, 
+                            enforce_detection=False
+                        )
+                        results.append((model, result['verified']))
+                    except Exception as e:
+                        results.append((model, f"Error: {str(e)}"))
+                
+                # Create DataFrame for results
+                df_results = pd.DataFrame(results, columns=["Model", "Result"])
+                col2.dataframe(df_results)
+                
+                # Count True and False values
+                true_count = sum(1 for _, res in results if res is True)
+                false_count = len(results) - true_count
+                
+                # Validation collection
+                validation_collection = collection.replace("-Schedule", "-Validations")
+                validation_collection = self.validationDB[validation_collection]
+                
+                if true_count > false_count:
+                    validation_collection.update_one(
+                        {"hall_ticket_number": select_hall_ticket_number, "subject": subject},
+                        {"$set": {"studentFaceRecognitionStatus": True}}
+                    )
+                    col2.success("✅ Student is Present")
+                else:
+                    validation_collection.update_one(
+                        {"hall_ticket_number": select_hall_ticket_number, "subject": subject},
+                        {"$set": {"studentFaceRecognitionStatus": False}}
+                    )
+                    col2.error("❌ Student Verification Failed")
     def validation(self):
         col1, col2 = st.columns([1, 2],border=True)
         col1.header("Please Enter Details For", divider='blue')
