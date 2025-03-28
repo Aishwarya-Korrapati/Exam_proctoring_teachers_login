@@ -196,32 +196,58 @@ class Teachers:
         else:
             col1.warning("No scheduled exams found.")
     def validateQR(self, col1, col2, select_hall_ticket_number, collection, subject):
-        """Validates student using QR code."""
         col2.subheader("You Are Performing QR Validation", divider='blue')
-        uploaded_image = col2.file_uploader("Upload QR Code Image", type=["png", "jpg", "jpeg"])
         
-        if uploaded_image:
-            image = Image.open(uploaded_image).convert('RGB')
-            image_np = np.array(image)
-            decoded_objects = pyzbar.decode(image_np)
-            
-            if decoded_objects:
-                decoded_data = decoded_objects[0].data.decode('utf-8')
-                col2.success(f"✅ QR Code Data: {decoded_data}")
-                if decoded_data.split("-")[-1] == select_hall_ticket_number:
+        # Add radio option for photo source
+        photo_source = col2.radio("Select photo source:", 
+                                 ["Take photo", "Upload photo"],
+                                 horizontal=True)
+        
+        qr_image = None
+        
+        if photo_source == "Take photo":
+            # Use camera input
+            qr_image = col2.camera_input("Take a photo of QR code")
+            if qr_image:
+                col2.image(qr_image, caption="Captured QR Code", use_column_width=True)
+        else:
+            # Use file uploader
+            qr_image = col2.file_uploader("Upload QR Code Image", 
+                                         type=["png", "jpg", "jpeg"])
+            if qr_image:
+                col2.image(qr_image, caption="Uploaded QR Code", use_column_width=True)
+        
+        if qr_image:
+            try:
+                # Process the image (works for both camera input and file upload)
+                image = Image.open(qr_image).convert('RGB')
+                image_np = np.array(image)
+                decoded_objects = pyzbar.decode(image_np)
+                
+                if decoded_objects:
+                    decoded_data = decoded_objects[0].data.decode('utf-8')
+                    col2.success(f"✅ QR Code Data: {decoded_data}")
+                    
                     validation_collection = collection.replace("-Schedule", "-Validations")
                     validation_collection = self.validationDB[validation_collection]
-                    validation_collection.update_one({"hall_ticket_number": select_hall_ticket_number, "subject": subject},
-                    {"$set": {"studentQRCodeStatus": True}})
-                    col2.success("✅ Student QR Validation Successful")
+                    
+                    if decoded_data.split("-")[-1] == select_hall_ticket_number:
+                        validation_collection.update_one(
+                            {"hall_ticket_number": select_hall_ticket_number, "subject": subject},
+                            {"$set": {"studentQRCodeStatus": True}}
+                        )
+                        col2.success("✅ Student QR Validation Successful")
+                    else:
+                        validation_collection.update_one(
+                            {"hall_ticket_number": select_hall_ticket_number, "subject": subject},
+                            {"$set": {"studentQRCodeStatus": False}}
+                        )
+                        col2.error("❌ QR Code does not match Hall Ticket Number")
                 else:
-                    validation_collection = collection.replace("-Schedule", "-Validations")
-                    validation_collection = self.validationDB[validation_collection]
-                    validation_collection.update_one({"hall_ticket_number": select_hall_ticket_number, "subject": subject},
-                    {"$set": {"studentQRCodeStatus": False}})
-                    col2.error("❌ QR Code does not match Hall Ticket Number")
-            else:
-                col2.error("❌ No QR Code detected in the uploaded image.")
+                    col2.error("❌ No QR Code detected in the image")
+                    
+            except Exception as e:
+                col2.error(f"❌ Error processing QR code: {str(e)}")
 
     def check_validations(self):
         """Checks for validations and displays the results."""
